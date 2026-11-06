@@ -1,0 +1,14 @@
+{
+  "name": "dsh-langsmith-tracer",
+  "version": "0.1.0",
+  "description": "Send DeepSeek Harness Session turns (LLM calls and tool calls) to LangSmith",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "langsmith": "^0.11.8"
+  }
+}

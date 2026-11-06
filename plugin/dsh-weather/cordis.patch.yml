@@ -1,0 +1,10 @@
+# Layer applied when a profile lists this bundle: mount the weather tool.
+# Override any field from the profile's own cordis.patch.yml by targeting id `weather`.
+- insert:
+    - id: weather
+      name: dsh-weather
+      config:
+        forecastDays: 3
+        language: vi
+        temperatureUnit: celsius
+        windSpeedUnit: kmh

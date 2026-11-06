@@ -1,0 +1,24 @@
+{
+  "name": "dsh-weather",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness tool that reads current weather and daily forecasts from Open-Meteo",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": ["index.js", "cordis.patch.yml", "README.md"],
+  "engines": {
+    "dsh": ">=0.2.2-alpha.0 <0.3.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/schemastery": "*"
+  }
+}

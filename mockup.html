@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cơm Văn Phòng Cầu Giấy — Ngon như cơm mẹ nấu</title>
+  <style>
+    /* ===== Reset & Variables ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --color-bg: #faf8f5;
+      --color-white: #ffffff;
+      --color-primary: #c85a2b;
+      --color-primary-dark: #a84820;
+      --color-primary-light: #fceee8;
+      --color-secondary: #2d8a4e;
+      --color-secondary-light: #e8f5ee;
+      --color-text: #2c2c2c;
+      --color-text-light: #6b6b6b;
+      --color-border: #e0ddd9;
+      --color-star: #f5a623;
+      --color-faq-bg: #f3f0eb;
+
+      --font-heading: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      --font-body: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+
+      --space-2: 0.25rem;
+      --space-4: 0.5rem;
+      --space-6: 0.75rem;
+      --space-8: 1rem;
+      --space-12: 1.5rem;
+      --space-16: 2rem;
+      --space-20: 2.5rem;
+      --space-24: 3rem;
+      --space-32: 4rem;
+
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
+      --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+
+      --max-width: 1200px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font-body);
+      color: var(--color-text);
+      background: var(--color-bg);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ===== Typography ===== */
+    h1, h2, h3, h4 { font-family: var(--font-heading); font-weight: 700; line-height: 1.2; }
+    h1 { font-size: clamp(1.75rem, 4.5vw, 2.75rem); }
+    h2 { font-size: clamp(1.35rem, 3vw, 2rem); text-align: center; margin-bottom: var(--space-16); }
+    h3 { font-size: clamp(1.1rem, 2vw, 1.35rem); }
+    p  { font-size: clamp(0.95rem, 1.5vw, 1.05rem); color: var(--color-text-light); }
+
+    a { color: var(--color-primary); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    img { max-width: 100%; height: auto; display: block; }
+
+    .container {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 0 var(--space-16);
+    }
+
+    /* ===== Buttons ===== */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-4);
+      padding: var(--space-12) var(--space-20);
+      border: none;
+      border-radius: var(--radius-md);
+      font-family: var(--font-heading);
+      font-weight: 600;
+      font-size: clamp(0.95rem, 1.5vw, 1.05rem);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-decoration: none;
+    }
+    .btn:focus-visible {
+      outline: 3px solid var(--color-primary);
+      outline-offset: 2px;
+    }
+    .btn-primary {
+      background: var(--color-primary);
+      color: var(--color-white);
+    }
+    .btn-primary:hover {
+      background: var(--color-primary-dark);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
+      text-decoration: none;
+    }
+    .btn-secondary {
+      background: var(--color-white);
+      color: var(--color-primary);
+      border: 2px solid var(--color-primary);
+    }
+    .btn-secondary:hover {
+      background: var(--color-primary-light);
+      transform: translateY(-1px);
+      text-decoration: none;
+    }
+
+    /* ===== Header ===== */
+    header {
+      background: var(--color-white);
+      border-bottom: 1px solid var(--color-border);
+      padding: var(--space-12) 0;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    header .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .logo {
+      font-family: var(--font-heading);
+      font-weight: 800;
+      font-size: 1.25rem;
+      color: var(--color-primary);
+    }
+    .logo span { color: var(--color-secondary); }
+    nav { display: flex; gap: var(--space-12); align-items: center; }
+    nav a {
+      color: var(--color-text);
+      font-weight: 500;
+      font-size: 0.9rem;
+    }
+    nav a:hover { color: var(--color-primary); text-decoration: none; }
+    .nav-cta {
+      display: none;
+    }
+    @media (min-width: 768px) {
+      .nav-cta { display: inline-flex; }
+    }
+
+    /* ===== Hero ===== */
+    .hero {
+      padding: var(--space-24) 0 var(--space-20);
+      background: linear-gradient(135deg, var(--color-primary-light) 0%, var(--color-bg) 100%);
+    }
+    .hero .container {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: var(--space-16);
+      align-items: center;
+    }
+    @media (min-width: 768px) {
+      .hero .container {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+    .hero-content h1 {
+      margin-bottom: var(--space-8);
+    }
+    .hero-content h1 em {
+      font-style: normal;
+      color: var(--color-primary);
+    }
+    .hero-content p {
+      font-size: clamp(1rem, 1.8vw, 1.15rem);
+      margin-bottom: var(--space-16);
+      max-width: 480px;
+    }
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-8);
+    }
+    .hero-image {
+      background: var(--color-secondary-light);
+      border-radius: var(--radius-lg);
+      padding: var(--space-20);
+      text-align: center;
+      min-height: 240px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--color-secondary);
+      font-weight: 600;
+      font-size: 1.1rem;
+    }
+
+    /* ===== Benefits ===== */
+    .benefits {
+      padding: var(--space-24) 0;
+    }
+    .benefits-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: var(--space-12);
+    }
+    @media (min-width: 600px) {
+      .benefits-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    .benefit-card {
+      background: var(--color-white);
+      border-radius: var(--radius-md);
+      padding: var(--space-16);
+      box-shadow: var(--shadow-sm);
+      text-align: center;
+    }
+    .benefit-icon {
+      width: 48px;
+      height: 48px;
+      margin: 0 auto var(--space-8);
+      background: var(--color-primary-light);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+    }
+    .benefit-card h3 { margin-bottom: var(--space-4); }
+    .benefit-card p { font-size: 0.9rem; }
+
+    /* ===== How it works ===== */
+    .how-it-works {
+      padding: var(--space-24) 0;
+      background: var(--color-white);
+    }
+    .steps {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: var(--space-16);
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    @media (min-width: 600px) {
+      .steps { grid-template-columns: repeat(3, 1fr); }
+    }
+    .step {
+      text-align: center;
+      position: relative;
+    }
+    .step-number {
+      width: 40px;
+      height: 40px;
+      background: var(--color-primary);
+      color: var(--color-white);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 1.1rem;
+      margin: 0 auto var(--space-8);
+    }
+    .step h3 { margin-bottom: var(--space-4); }
+    .step p { font-size: 0.9rem; }
+
+    /* ===== Pricing ===== */
+    .pricing {
+      padding: var(--space-24) 0;
+    }
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: var(--space-12);
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    @media (min-width: 600px) {
+      .pricing-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    .pricing-card {
+      background: var(--color-white);
+      border-radius: var(--radius-md);
+      padding: var(--space-16);
+      box-shadow: var(--shadow-sm);
+      text-align: center;
+      border: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .pricing-card.featured {
+      border-color: var(--color-primary);
+      box-shadow: var(--shadow-md);
+      position: relative;
+    }
+    .pricing-card.featured::before {
+      content: "Phổ biến nhất";
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--color-primary);
+      color: var(--color-white);
+      padding: 2px 12px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .pricing-card h3 { margin-bottom: var(--space-4); }
+    .price {
+      font-size: clamp(1.5rem, 3vw, 2rem);
+      font-weight: 800;
+      color: var(--color-primary);
+      margin: var(--space-8) 0;
+    }
+    .price small {
+      font-size: 0.7em;
+      font-weight: 400;
+      color: var(--color-text-light);
+    }
+    .pricing-card ul {
+      list-style: none;
+      margin: var(--space-8) 0;
+      text-align: left;
+    }
+    .pricing-card ul li {
+      padding: var(--space-2) 0;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+    }
+    .pricing-card ul li::before {
+      content: "✓";
+      color: var(--color-secondary);
+      font-weight: 700;
+    }
+
+    /* ===== Testimonials ===== */
+    .testimonials {
+      padding: var(--space-24) 0;
+      background: var(--color-white);
+    }
+    .testimonial-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: var(--space-12);
+    }
+    @media (min-width: 600px) {
+      .testimonial-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    .testimonial-card {
+      background: var(--color-bg);
+      border-radius: var(--radius-md);
+      padding: var(--space-16);
+    }
+    .stars {
+      color: var(--color-star);
+      font-size: 1.1rem;
+      margin-bottom: var(--space-4);
+    }
+    .testimonial-card blockquote {
+      font-style: italic;
+      font-size: 0.9rem;
+      margin-bottom: var(--space-8);
+    }
+    .testimonial-author {
+      font-weight: 600;
+      font-size: 0.85rem;
+    }
+    .testimonial-author small {
+      font-weight: 400;
+      color: var(--color-text-light);
+    }
+    .testimonial-badge {
+      display: inline-block;
+      background: var(--color-secondary-light);
+      color: var(--color-secondary);
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 10px;
+      margin-top: var(--space-4);
+    }
+
+    /* ===== FAQ ===== */
+    .faq {
+      padding: var(--space-24) 0;
+      background: var(--color-faq-bg);
+    }
+    .faq-list {
+      max-width: 700px;
+      margin: 0 auto;
+    }
+    .faq-item {
+      background: var(--color-white);
+      border-radius: var(--radius-sm);
+      margin-bottom: var(--space-8);
+      box-shadow: var(--shadow-sm);
+    }
+    .faq-question {
+      width: 100%;
+      background: none;
+      border: none;
+      padding: var(--space-12) var(--space-16);
+      font-family: var(--font-heading);
+      font-weight: 600;
+      font-size: 0.95rem;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--color-text);
+    }
+    .faq-question::after {
+      content: "+";
+      font-size: 1.2rem;
+      color: var(--color-primary);
+      transition: transform 0.2s;
+    }
+    .faq-question[aria-expanded="true"]::after {
+      content: "−";
+    }
+    .faq-answer {
+      padding: 0 var(--space-16) var(--space-12);
+      font-size: 0.9rem;
+      color: var(--color-text-light);
+      display: none;
+    }
+    .faq-question[aria-expanded="true"] + .faq-answer {
+      display: block;
+    }
+
+    /* ===== CTA Final ===== */
+    .cta-final {
+      padding: var(--space-24) 0;
+      text-align: center;
+      background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+      color: var(--color-white);
+    }
+    .cta-final h2 { color: var(--color-white); margin-bottom: var(--space-8); }
+    .cta-final p { color: rgba(255,255,255,0.85); margin-bottom: var(--space-16); max-width: 500px; margin-left: auto; margin-right: auto; }
+    .cta-final .btn-primary {
+      background: var(--color-white);
+      color: var(--color-primary);
+    }
+    .cta-final .btn-primary:hover {
+      background: var(--color-primary-light);
+    }
+    .cta-final .btn-secondary {
+      border-color: var(--color-white);
+      color: var(--color-white);
+    }
+    .cta-final .btn-secondary:hover {
+      background: rgba(255,255,255,0.15);
+    }
+    .cta-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-8);
+      justify-content: center;
+    }
+
+    /* ===== Footer ===== */
+    footer {
+      background: var(--color-text);
+      color: rgba(255,255,255,0.7);
+      padding: var(--space-16) 0;
+      text-align: center;
+      font-size: 0.85rem;
+    }
+    footer a { color: rgba(255,255,255,0.9); }
+
+    /* ===== Mockup label ===== */
+    .mockup-label {
+      background: #ffd700;
+      color: #333;
+      text-align: center;
+      padding: var(--space-4);
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    /* ===== Accessibility ===== */
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0,0,0,0);
+      border: 0;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition-duration: 0.01ms !important; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="mockup-label">⚠️ Đây là mockup — nội dung (giá, đánh giá, số liệu) mang tính minh hoạ</div>
+
+<!-- ===== Header ===== -->
+<header>
+  <div class="container">
+    <div class="logo">Cơm<span>VP</span> Cầu Giấy</div>
+    <nav>
+      <a href="#benefits">Lợi ích</a>
+      <a href="#pricing">Giá</a>
+      <a href="#faq">Hỏi đáp</a>
+      <a href="#cta" class="btn btn-primary nav-cta">Đặt ngay</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ===== Hero ===== -->
+<section class="hero" id="hero">
+  <div class="container">
+    <div class="hero-content">
+      <h1>Cơm trưa văn phòng — <em>Ngon như cơm mẹ nấu</em>, giao tận bàn trong 30 phút</h1>
+      <p>Thực đơn thay đổi mỗi ngày, nguyên liệu tươi sạch, giao hàng đúng giờ. Đặt ngay để có bữa trưa trọn vẹn!</p>
+      <div class="hero-actions">
+        <a href="#cta" class="btn btn-primary">📱 Đặt qua Zalo</a>
+        <a href="#pricing" class="btn btn-secondary">Xem thực đơn</a>
+      </div>
+    </div>
+    <div class="hero-image" role="img" aria-label="[ảnh: suất cơm văn phòng với thịt kho, rau luộc, canh và cơm trắng, đóng hộp giấy đẹp mắt]">
+      🍱 [Ảnh: Suất cơm văn phòng mẫu]
+    </div>
+  </div>
+</section>
+
+<!-- ===== Benefits ===== -->
+<section class="benefits" id="benefits">
+  <div class="container">
+    <h2>Tại sao chọn CơmVP Cầu Giấy?</h2>
+    <div class="benefits-grid">
+      <div class="benefit-card">
+        <div class="benefit-icon">📅</div>
+        <h3>Thực đơn mới mỗi ngày</h3>
+        <p>7 ngày không trùng món. Thịt kho, cá rô kho tộ, gà xào sả ớt, đậu sốt cà chua… luân phiên đều đặn.</p>
+      </div>
+      <div class="benefit-card">
+        <div class="benefit-icon">🥗</div>
+        <h3>Nguyên liệu tươi sạch</h3>
+        <p>Rau củ nhập chợ đầu mối mỗi sáng, thịt cá có nguồn gốc rõ ràng. Có suất healthy cho người ăn kiêng.</p>
+      </div>
+      <div class="benefit-card">
+        <div class="benefit-icon">⏱️</div>
+        <h3>Giao hàng đúng giờ</h3>
+        <p>Cam kết giao trong 30 phút từ giờ hẹn. Nếu chậm, tặng bạn 1 suất miễn phí vào lần sau.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== How it works ===== -->
+<section class="how-it-works">
+  <div class="container">
+    <h2>Đặt cơm chỉ 3 bước</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-number">1</div>
+        <h3>Chọn món</h3>
+        <p>Xem thực đơn hôm nay trên Zalo OA hoặc Facebook. Chọn suất thường hoặc suất healthy.</p>
+      </div>
+      <div class="step">
+        <div class="step-number">2</div>
+        <h3>Đặt & thanh toán</h3>
+        <p>Nhắn tin qua Zalo, Facebook hoặc đặt trên GrabFood/ShopeeFood. Thanh toán chuyển khoản hoặc tiền mặt.</p>
+      </div>
+      <div class="step">
+        <div class="step-number">3</div>
+        <h3>Nhận cơm</h3>
+        <p>Cơm nóng hổi được giao tới bàn làm việc của bạn trong vòng 30 phút. Ăn ngon nhé!</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Pricing ===== -->
+<section class="pricing" id="pricing">
+  <div class="container">
+    <h2>Bảng giá — Minh bạch, hợp lý</h2>
+    <div class="pricing-grid">
+      <div class="pricing-card">
+        <h3>Suất thường</h3>
+        <div class="price">35.000 <small>VNĐ</small></div>
+        <ul>
+          <li>Cơm trắng</li>
+          <li>1 món mặn (thịt/cá/gà)</li>
+          <li>1 món rau luộc/xào</li>
+          <li>Canh + dưa góp</li>
+        </ul>
+        <a href="#cta" class="btn btn-secondary" style="width:100%;justify-content:center;">Đặt ngay</a>
+      </div>
+      <div class="pricing-card featured">
+        <h3>Suất healthy</h3>
+        <div class="price">45.000 <small>VNĐ</small></div>
+        <ul>
+          <li>Cơm gạo lứt</li>
+          <li>Ức gà / cá hấp / đậu hũ</li>
+          <li>Rau luộc</li>
+          <li>Canh thanh đạm + trái cây</li>
+        </ul>
+        <a href="#cta" class="btn btn-primary" style="width:100%;justify-content:center;">Đặt ngay</a>
+      </div>
+      <div class="pricing-card">
+        <h3>Combo tuần</h3>
+        <div class="price">157.500 <small>VNĐ</small></div>
+        <ul>
+          <li>5 suất thường (tiết kiệm 10%)</li>
+          <li>Thực đơn cố định trước 1 tuần</li>
+          <li>Giao cùng giờ mỗi ngày</li>
+          <li>Miễn phí giao hàng</li>
+        </ul>
+        <a href="#cta" class="btn btn-secondary" style="width:100%;justify-content:center;">Đặt ngay</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Testimonials ===== -->
+<section class="testimonials" id="testimonials">
+  <div class="container">
+    <h2>Khách hàng nói gì về chúng tôi</h2>
+    <p style="text-align:center;margin-bottom:var(--space-16);">(Đánh giá mẫu — quán chưa khai trương)</p>
+    <div class="testimonial-grid">
+      <div class="testimonial-card">
+        <div class="stars">★★★★★</div>
+        <blockquote>"Cơm ngon, phần no, giao đúng giờ. Mình đặt combo tuần từ hồi mới biết quán, tiết kiệm được kha khá."</blockquote>
+        <div class="testimonial-author">Chị Thu Hương <small>— Nhân viên hành chính, Keangnam</small></div>
+        <div class="testimonial-badge">Mẫu</div>
+      </div>
+      <div class="testimonial-card">
+        <div class="stars">★★★★★</div>
+        <blockquote>"Suất healthy của quán rất ok, cơm gạo lứt với ức gà — đúng gu dân fitness. Giá hợp lý hơn mấy chỗ khác."</div>
+        <div class="testimonial-author">Anh Minh Tuấn <small>— IT, FPT Cầu Giấy</small></div>
+        <div class="testimonial-badge">Mẫu</div>
+      </div>
+      <div class="testimonial-card">
+        <div class="stars">★★★★☆</div>
+        <blockquote>"Đặt qua Zalo nhanh, nhân viên nhiệt tình. Cơm mẹ nấu đúng nghĩa — hôm nào cũng thấy ngon."</blockquote>
+        <div class="testimonial-author">Bạn Ngọc Anh <small>— Designer, Duy Tân</small></div>
+        <div class="testimonial-badge">Mẫu</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== FAQ ===== -->
+<section class="faq" id="faq">
+  <div class="container">
+    <h2>Câu hỏi thường gặp</h2>
+    <div class="faq-list">
+      <div class="faq-item">
+        <button class="faq-question" aria-expanded="false" onclick="toggleFaq(this)">Quán có giao hàng miễn phí không?</button>
+        <div class="faq-answer">Miễn phí giao hàng trong bán kính 1,5km cho đơn từ 3 suất trở lên. Đơn lẻ phí giao 5.000–10.000 VNĐ tuỳ khoảng cách.</div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" aria-expanded="false" onclick="toggleFaq(this)">Tôi có thể đặt trước cho cả tuần không?</button>
+        <div class="faq-answer">Có! Combo tuần giảm 10% so với mua lẻ. Bạn chọn thực đơn trước 1 tuần, chúng tôi giao đúng giờ mỗi ngày.</div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" aria-expanded="false" onclick="toggleFaq(this)">Quán có suất cho người ăn chay/ăn kiêng không?</button>
+        <div class="faq-answer">Có. Suất healthy dùng cơm gạo lứt, ức gà/cá hấp/đậu hũ, rau luộc. Bạn cũng có thể yêu cầu riêng khi đặt.</div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" aria-expanded="false" onclick="toggleFaq(this)">Tôi muốn đặt cho nhóm 10 người thì làm thế nào?</button>
+        <div class="faq-answer">Nhắn tin qua Zalo OA hoặc Facebook, chúng tôi sẽ gửi menu nhóm và xác nhận trong 5 phút. Đặt trước 1 tiếng là được.</div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" aria-expanded="false" onclick="toggleFaq(this)">Quán có mặt trên GrabFood/ShopeeFood không?</button>
+        <div class="faq-answer">Có. Bạn có thể đặt qua GrabFood, ShopeeFood hoặc GoFood. Tuy nhiên đặt trực tiếp qua Zalo/Facebook sẽ có giá tốt hơn.</div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" aria-expanded="false" onclick="toggleFaq(this)">Nếu tôi không hài lòng với suất ăn thì sao?</button>
+        <div class="faq-answer">Chúng tôi cam kết đổi/hoàn tiền nếu bạn không hài lòng. Chỉ cần nhắn tin qua Zalo, chúng tôi sẽ xử lý ngay.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== CTA Final ===== -->
+<section class="cta-final" id="cta">
+  <div class="container">
+    <h2>Hôm nay ăn gì? Để tụi mình lo!</h2>
+    <p>Đặt ngay để nhận ưu đãi khai trương — giảm 10.000đ cho đơn đầu tiên.</p>
+    <div class="cta-actions">
+      <a href="#" class="btn btn-primary">📱 Đặt qua Zalo</a>
+      <a href="#" class="btn btn-secondary">📲 Đặt qua Facebook</a>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Footer ===== -->
+<footer>
+  <div class="container">
+    <p><strong>CơmVP Cầu Giấy</strong> — Cơm trưa văn phòng ngon-sạch-nhanh</p>
+    <p>📍 Địa chỉ: [Đang tìm mặt bằng] &nbsp;|&nbsp; 📞 Hotline: [Số điện thoại]</p>
+    <p>⏰ Giờ mở cửa: 10:00–13:30 (Thứ 2–Thứ 7)</p>
+    <p style="margin-top:var(--space-8);font-size:0.75rem;">&copy; 2026 CơmVP Cầu Giấy. Mockup minh hoạ — chưa phải sản phẩm thật.</p>
+  </div>
+</footer>
+
+<script>
+  function toggleFaq(btn) {
+    const expanded = btn.getAttribute('aria-expanded') === 'true' ? false : true;
+    btn.setAttribute('aria-expanded', expanded);
+  }
+</script>
+
+</body>
+</html>

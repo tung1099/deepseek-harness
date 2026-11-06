@@ -1,0 +1,11 @@
+{
+  "name": "dsh-session-writer-trace",
+  "version": "0.1.0",
+  "description": "Trace how the Session log is written: every append, the write-behind batch, and each flush checkpoint",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  }
+}

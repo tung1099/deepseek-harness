@@ -1,0 +1,41 @@
+{
+  "name": "dsh-persona-switcher",
+  "version": "0.1.0",
+  "description": "Switch the DeepSeek Harness agent persona per conversation: switch_persona tool, /persona command, Web picker, and persona sub-plugins",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./persona": "./persona.js",
+    "./tool": "./tool.js",
+    "./command": "./command.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": ["index.js", "persona.js", "tool.js", "command.js", "client.js", "cordis.patch.yml", "README.md"],
+  "engines": {
+    "dsh": ">=0.2.2-alpha.0 <0.3.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-session"
+      ],
+      "platform": "web"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/schemastery": "*",
+    "@deepseek-ai/dsh-session": "*",
+    "@deepseek-ai/dsh-system-prompt": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/dsh-commands": "*"
+  }
+}
