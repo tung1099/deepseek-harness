@@ -78,3 +78,9 @@
                   thresholdChars: 8192
                   headChars: 4096
                   tailChars: 1024
+
+# Browser half: the doc_translate row of the conversation and the right Sidebar tab that shows a running translation page by page or line by line.
+# The row's name must be the bare package name: the client module system serves `client.js` from the package that row names.
+- insert:
+    - id: doc-translator-ui
+      name: dsh-doc-translator

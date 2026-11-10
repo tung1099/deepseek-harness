@@ -118,9 +118,9 @@ test('a PDF with one text page and one image page uses the text layer for the fi
 
 // ---- the renderer on its own ----
 
-const render = (dir, items, language = 'vi', obstacles = []) => {
+const render = (dir, items, language = 'vi', obstacles = [], draw = '') => {
   const image = join(dir, 'in.png')
-  spawnSync('python3', ['-c', `from PIL import Image\nImage.new("RGB", (800, 400), (255, 255, 255)).save(${JSON.stringify(image)})`])
+  spawnSync('python3', ['-c', `from PIL import Image, ImageDraw\nim = Image.new("RGB", (800, 400), (255, 255, 255))\nd = ImageDraw.Draw(im)\n${draw}\nim.save(${JSON.stringify(image)})`])
   const spec = { dpi: 100, language, pdf: null, pages: [{ image, obstacles, output: join(dir, 'out.png'), items }] }
   writeFileSync(join(dir, 'spec.json'), JSON.stringify(spec))
   const result = spawnSync('python3', [join(import.meta.dirname, '..', 'scripts', 'render_overlay.py'), join(dir, 'spec.json')], { encoding: 'utf8' })
@@ -190,5 +190,138 @@ test('the colour comes from the PDF, not from the ink on the page: on a blank pa
     render(dir, [item])
     const black = Number(spawnSync('python3', ['-c', count('r < 60 and g < 60 and b < 60')], { encoding: 'utf8' }).stdout)
     assert.ok(black > 50, 'without a colour the page default (black on a blank page) is used')
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+// ---- paragraphs of a text layer ----
+
+import { groupParagraphs, parsePdfXml } from '../layer.js'
+
+/** A `pdftohtml -xml` page from `[top, left, width, height, font, text]` items. */
+function xmlPage(items, fonts = ['<fontspec id="0" size="25" family="AAAAAA+FSMagistralBook" color="#000000"/>', '<fontspec id="1" size="27" family="BAAAAA+FSMagistralBold" color="#000000"/>', '<fontspec id="2" size="13" family="CAAAAA+NotoSansCJKsc" color="#000000"/>']) {
+  const texts = items.map(([top, left, width, height, font, text]) => `<text top="${top}" left="${left}" width="${width}" height="${height}" font="${font}">${text}</text>`)
+  return `<pdf2xml><page number="1" position="absolute" top="0" left="0" height="1000" width="2000">${fonts.join('')}${texts.join('')}</page></pdf2xml>`
+}
+
+test('pieces of one line are joined, including a small glyph set lower than the text', () => {
+  const [page] = parsePdfXml(xmlPage([
+    [199, 439, 801, 33, 0, 'hằng ngày, đi từ tình huống '],
+    [214, 1241, 28, 17, 2, '→'],
+    [199, 1269, 227, 33, 0, ' đưa ra quyết định'],
+  ]))
+  const [paragraph] = groupParagraphs(page)
+  assert.equal(paragraph.text, 'hằng ngày, đi từ tình huống → đưa ra quyết định')
+  assert.equal(paragraph.family, 'FSMagistral Book')
+  assert.equal(paragraph.quads.length, 1)
+})
+
+test('lines of one card form a centred paragraph; a title in another font and a far column stay apart', () => {
+  const [page] = parsePdfXml(xmlPage([
+    [558, 167, 253, 34, 1, '<b>Đổi cách định nghĩa</b>'],
+    [599, 242, 103, 34, 1, '<b>nhu cầu</b>'],
+    [671, 165, 252, 29, 0, 'Từ task category sang'],
+    [706, 170, 243, 29, 0, 'life problem; capability'],
+    [741, 154, 275, 29, 0, 'hiện có trở thành lớp nền'],
+    [775, 223, 136, 29, 0, 'dùng chung.'],
+    [671, 575, 228, 29, 0, 'Cột bên cạnh'],
+  ]))
+  const paragraphs = groupParagraphs(page)
+  assert.deepEqual(paragraphs.map(p => [p.text, p.align, p.sources.length]), [
+    ['Đổi cách định nghĩa nhu cầu', 'center', 2],
+    ['Từ task category sang life problem; capability hiện có trở thành lớp nền dùng chung.', 'center', 4],
+    ['Cột bên cạnh', 'left', 1],
+  ])
+  assert.ok(Math.abs(paragraphs[1].lineHeight - 0.0347) < 0.001, 'line height is the step between line tops')
+})
+
+test('a bullet, or a short left-aligned line that ends a sentence, starts a new paragraph; a hyphenated word is joined', () => {
+  const [page] = parsePdfXml(xmlPage([
+    [100, 100, 600, 29, 0, 'Một đoạn văn dài được ngắt xuống dòng và tiếp'],
+    [135, 100, 300, 29, 0, 'tục ở đây. Hết.'],
+    [170, 100, 600, 29, 0, 'Đoạn mới bắt đầu ở dòng này, viết liền mạch, được ngắt-'],
+    [205, 100, 300, 29, 0, 'dòng ở giữa từ'],
+    [240, 100, 500, 29, 0, '• Một gạch đầu dòng'],
+  ]))
+  assert.deepEqual(groupParagraphs(page).map(p => p.text), [
+    'Một đoạn văn dài được ngắt xuống dòng và tiếp tục ở đây. Hết.',
+    'Đoạn mới bắt đầu ở dòng này, viết liền mạch, được ngắtdòng ở giữa từ',
+    '• Một gạch đầu dòng',
+  ])
+})
+
+/** Bounds of the dark ink on the rendered page, as fractions of its size. */
+function inkBounds(dir) {
+  const code = `from PIL import Image\nimg = Image.open(${JSON.stringify(join(dir, 'out.png'))}).convert("RGB")\nw, h = img.size\nink = [(x, y) for y in range(h) for x in range(w) if sum(img.getpixel((x, y))) < 300]\nprint(min(p[0] for p in ink) / w, max(p[0] for p in ink) / w, min(p[1] for p in ink) / h, max(p[1] for p in ink) / h)`
+  return spawnSync('python3', ['-c', code], { encoding: 'utf8' }).stdout.trim().split(' ').map(Number)
+}
+const PARAGRAPH = {
+  block: true, exact: true, align: 'center', lineHeight: 0.08, family: 'FS Magistral', size: 0.022, color: '#000000', bold: false, italic: false,
+  quads: [[200, 100, 450, 100, 450, 160, 200, 160], [220, 180, 430, 180, 430, 240, 220, 240]],
+  sources: ['Từ task category sang', 'life problem; capability'],
+  quad: [200, 100, 450, 100, 450, 240, 200, 240],
+  text: 'From task categories to life problems; existing capabilities become a shared foundation layer for everyone → done',
+}
+
+test('inside a frame, a paragraph is wrapped in one size and its ink stays inside the frame', { skip: !PY || !has('fc-match') }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'render-test-'))
+  try {
+    // A light grey card with a 2-pixel border just around the paragraph.
+    const frame = 'd.rectangle((150, 30, 370, 260), fill=(235, 235, 235), outline=(120, 120, 120), width=2)'
+    const report = render(dir, [PARAGRAPH], 'en', [], frame)
+    assert.equal(report.lines, 1)
+    assert.equal(new Set(report.sizes).size, 1)
+    const [x1, x2, y1, y2] = inkBounds(dir)
+    assert.ok(x1 > 150 / 800 && x2 < 370 / 800 && y1 > 30 / 400 && y2 < 260 / 400, `ink ${[x1, x2, y1, y2]} stays inside the card`)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('on open background a paragraph grows only a little sideways, keeps one size, and stays above the text below it', { skip: !PY || !has('fc-match') }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'render-test-'))
+  try {
+    const report = render(dir, [PARAGRAPH], 'en', [[200, 700, 260, 700, 260, 800, 200, 800]])
+    assert.equal(report.overflow, 0)
+    const [x1, x2, , y2] = inkBounds(dir)
+    assert.ok(x1 > 0.2 - 0.25 * 0.15 - 0.01 && x2 < 0.45 + 0.25 * 0.15 + 0.01, `a paragraph grows at most 15% of its width on each side: ${[x1, x2]}`)
+    assert.ok(y2 < 0.7, `the ink ends above the obstacle: ${y2}`)
+    assert.equal(new Set(report.sizes).size, 1)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('line breaking never cuts a word unless asked to', { skip: !PY }, () => {
+  const code = `import sys\nsys.path.insert(0, ${JSON.stringify(join(import.meta.dirname, '..', 'scripts'))})\nfrom render_overlay import wrap\nclass F:\n    def getlength(self, t): return 10 * len(t)\nprint(wrap("Selective screening", F(), 60))\nprint(wrap("Selective screening", F(), 60, True))\nprint(wrap("你好世界你好", F(), 30))`
+  const out = spawnSync('python3', ['-c', code], { encoding: 'utf8' })
+  assert.equal(out.status, 0, out.stderr)
+  assert.deepEqual(out.stdout.trim().split('\n'), ["['Selective', 'screening']", "['Select', 'ive', 'screen', 'ing']", "['你好世', '界你好']"])
+})
+
+test('one-line labels in a column ending at one edge are right-aligned', () => {
+  const [page] = parsePdfXml(xmlPage([
+    [490, 732, 146, 38, 0, 'Mua sắm'],
+    [572, 735, 143, 38, 0, 'Công việc'],
+    [642, 703, 175, 38, 0, 'Tài chính số'],
+    [736, 583, 295, 38, 0, 'Tương tác và liên lạc'],
+    [490, 1000, 400, 38, 0, 'Hôm nay tôi cần xử lý chuyện gì?'],
+    [572, 1000, 600, 38, 0, 'Tình huống nào đang làm tôi mất thời gian?'],
+  ]))
+  const align = Object.fromEntries(groupParagraphs(page).map(p => [p.text, p.align]))
+  assert.deepEqual(align, {
+    'Mua sắm': 'right', 'Công việc': 'right', 'Tài chính số': 'right', 'Tương tác và liên lạc': 'right',
+    'Hôm nay tôi cần xử lý chuyện gì?': 'left', 'Tình huống nào đang làm tôi mất thời gian?': 'left',
+  })
+})
+
+test('paragraphs of one style get one size, apart from one that needs far less room', { skip: !PY || !has('fc-match') }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'render-test-'))
+  try {
+    const label = (top, text, source) => ({
+      block: true, exact: true, align: 'right', lineHeight: 0.08, family: 'FS Magistral', size: 0.022, color: '#333333', bold: false, italic: false,
+      quads: [[300, top, 450, top, 450, top + 50, 300, top + 50]], sources: [source], quad: [300, top, 450, top, 450, top + 50, 300, top + 50], text,
+    })
+    // A frame tight around the column leaves the labels no room to grow, so their own sizes differ.
+    const items = [label(100, 'Shop', 'Mua sắm'), label(250, 'Work', 'Công việc'), label(400, 'Digital money', 'Tài chính số'), label(550, 'Info', 'Thông tin')]
+    const report = render(dir, items, 'en', [], 'd.rectangle((230, 30, 370, 270), outline=(0, 0, 0), width=2)')
+    const sizes = report.sizes
+    assert.equal(new Set([sizes[0], sizes[1], sizes[3]]).size, 1, `short labels share one size: ${sizes}`)
+    assert.ok(sizes[2] <= sizes[0])
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })

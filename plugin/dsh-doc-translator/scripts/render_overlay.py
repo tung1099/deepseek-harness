@@ -16,6 +16,21 @@ those are used instead of the guesses made from the image. A page may also carry
 grow to the right, up to the next box on its row, instead of shrinking to the width of
 the shorter original text.
 Writes a JSON report to stdout.
+
+An item with "block": true is a paragraph read from a PDF text layer. It carries
+"quads" (one per original line), "sources" (the original text of each line),
+"align" ("left", "center" or "right") and "lineHeight" (distance between line
+tops as a fraction of the page height), plus the exact style fields. Its old
+lines are covered, and the translation is wrapped into the paragraph's width in
+one size for every line: the size the original text would need in the chosen
+font to keep its width. The paragraph keeps its own box when the translation
+fits; otherwise it may grow into the plain background around it (checked
+pixel by pixel, so it stops at borders, shapes and other text) but never past
+the next text below it; only then is the size reduced. Words are never cut
+unless the text has no room even at half size.
+
+With "--assemble OUT.pdf DPI IMAGE..." the script instead joins the page images,
+in order, into one PDF at OUT.pdf and writes nothing to stdout.
 """
 import json
 import math
@@ -24,7 +39,7 @@ import subprocess
 import sys
 from functools import lru_cache
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 MIN_SIZE = 7
 MAX_GROWTH = 2.5  # an exact line may grow to this many times its original width at most
@@ -233,7 +248,407 @@ def render_item(image, item, language, report, obstacles, margin):
     report["sizes"].append(font.size)
 
 
+def quad_box(q, w, h):
+    xs = [q[i] / 1000.0 * w for i in range(0, 8, 2)]
+    ys = [q[i] / 1000.0 * h for i in range(1, 8, 2)]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def wrap(text, font, width, break_words=False):
+    """Greedy line breaking at spaces; text without spaces (Chinese, Japanese, Thai) breaks between characters.
+
+    A word wider than the line is cut between characters only with `break_words`;
+    otherwise it stays whole and the caller sees a line wider than `width`.
+    """
+    spaced = " " in text.strip() or LATIN_LIKE.match(text)
+    tokens = re.findall(r"\S+\s*", text) if spaced else list(text)
+    lines, current = [], ""
+    for token in tokens:
+        candidate = current + token
+        if current and font.getlength(candidate.rstrip()) > width:
+            lines.append(current.rstrip())
+            current = token
+        else:
+            current = candidate
+        while (break_words or not spaced) and font.getlength(current.rstrip()) > width and len(current.rstrip()) > 1:
+            cut = len(current)
+            while cut > 1 and font.getlength(current[:cut]) > width:
+                cut -= 1
+            lines.append(current[:cut])
+            current = current[cut:]
+    if current.strip():
+        lines.append(current.rstrip())
+    return lines or [""]
+
+
+def is_free(image, box, background, tolerance=26, share=0.99):
+    """Whether `box` shows only `background`: no text, border, shape or picture inside it."""
+    w, h = image.size
+    x1, y1, x2, y2 = max(0, int(box[0])), max(0, int(box[1])), min(w, int(math.ceil(box[2]))), min(h, int(math.ceil(box[3])))
+    if x2 <= x1 or y2 <= y1:
+        return False
+    crop = image.crop((x1, y1, x2, y2)).convert("RGB")
+    diff = ImageChops.difference(crop, Image.new("RGB", crop.size, background))
+    worst = ImageChops.lighter(ImageChops.lighter(diff.getchannel(0), diff.getchannel(1)), diff.getchannel(2))
+    histogram = worst.histogram()
+    return sum(histogram[: tolerance + 1]) >= share * crop.size[0] * crop.size[1]
+
+
+def neighbour_limits(box, obstacles, reach_y=0.0):
+    """Half the distance to the nearest other text box beside the paragraph, to the left and to the right.
+
+    A box counts when it overlaps the paragraph's rows or lies within `reach_y`
+    above or below them: the text of a neighbouring column is rarely on exactly
+    the same rows.
+    """
+    x1, y1, x2, y2 = box
+    left = right = float("inf")
+    for ox1, oy1, ox2, oy2 in obstacles:
+        inside = ox1 >= x1 - 1 and ox2 <= x2 + 1 and oy1 >= y1 - 1 and oy2 <= y2 + 1
+        if inside or min(y2 + reach_y, oy2) - max(y1 - reach_y, oy1) <= 0:
+            continue
+        if ox1 >= x2:
+            right = min(right, (ox1 - x2) / 2)
+        elif ox2 <= x1:
+            left = min(left, (x1 - ox2) / 2)
+    return left, right
+
+
+def free_room(image, box, background, align, step, max_lines, obstacles=(), single_line=False):
+    """The paragraph box grown into the free background around it.
+
+    Sideways: centred text grows on both sides by the same amount, left-aligned
+    text to the right and right-aligned text to the left, on each grown side up
+    to 60% of the width for a one-line label and 15% for a paragraph, and never
+    past half the distance to the next text box on the same rows or within two
+    lines above or below. Down: whole lines of `step`, at most `max_lines`, over
+    the grown width. Sideways growth keeps a quarter line (at least one increment)
+    away from anything that is not background; downward growth stops at the
+    last whole line that is still background.
+    """
+    bx1, by1, bx2, by2 = box
+    w, _ = image.size
+    increment = max(4.0, 0.03 * (bx2 - bx1))
+    limit = (0.6 if single_line else 0.15) * (bx2 - bx1)
+
+    def reach(direction):
+        grown = 0.0
+        while grown + increment <= limit:
+            strip = (bx2 + grown, by1, bx2 + grown + increment, by2) if direction > 0 else (bx1 - grown - increment, by1, bx1 - grown, by2)
+            # Keep the page margin free: text never grows into the outer 3% of the page.
+            if strip[0] < 0.03 * w or strip[2] > 0.97 * w or not is_free(image, strip, background):
+                break
+            grown += increment
+        # Keep a gutter of about a quarter line between the text and whatever stopped it.
+        return max(0.0, grown - max(increment, 0.25 * step))
+
+    # Text beside the paragraph keeps its own half of the space between them.
+    near_left, near_right = neighbour_limits(box, obstacles, 2 * step)
+    left = min(reach(-1), near_left) if align in ("center", "right") else 0.0
+    right = min(reach(1), near_right) if align in ("center", "left") else 0.0
+    if align == "center":
+        left = right = min(left, right)
+    x1, x2 = bx1 - left, bx2 + right
+    bottom = by2
+    for _ in range(max_lines):
+        if not is_free(image, (x1, bottom, x2, bottom + step * 1.15), background):
+            break
+        bottom += step
+    return x1, by1, x2, bottom
+
+
+def room_below(box, obstacles, page_height, gap):
+    """Lowest bottom a paragraph may reach: just above the next text under it, or the page bottom."""
+    x1, y1, x2, y2 = box
+    limit = page_height - gap
+    for ox1, oy1, ox2, oy2 in obstacles:
+        inside = ox1 >= x1 - 1 and ox2 <= x2 + 1 and oy1 >= y1 - 1 and oy2 <= y2 + 1
+        if inside or oy1 < y2 - 1:
+            continue
+        if min(x2, ox2) - max(x1, ox1) > 0:
+            limit = min(limit, oy1 - gap)
+    return limit
+
+
+SANS_CANDIDATES = ("Helvetica Neue", "Helvetica", "Arial", "Avenir Next", "Avenir", "Segoe UI", "Roboto", "Open Sans", "Noto Sans", "Liberation Sans", "Arial Narrow", "Trebuchet MS", "Gill Sans", "Verdana", "DejaVu Sans")
+SERIF_CANDIDATES = ("Times New Roman", "Times", "Georgia", "Liberation Serif", "Noto Serif", "DejaVu Serif", "Baskerville", "Cambria")
+SERIF_HINT = re.compile(r"serif|times|roman|georgia|garamond|baskerville|cambria|minion|palatino|book antiqua", re.I)
+
+
+@lru_cache(maxsize=None)
+def match(pattern):
+    """`(file, index, family)` of the font fontconfig picks for `pattern`, or None."""
+    try:
+        out = subprocess.run(["fc-match", "-f", "%{file}|%{index}|%{family}", pattern], capture_output=True, text=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    parts = out.split("|", 2)
+    if len(parts) != 3 or not parts[0]:
+        return None
+    return parts[0], int(parts[1] or 0), parts[2].split(",")[0]
+
+
+@lru_cache(maxsize=None)
+def charset(path, index):
+    """Code points the font maps, or None when the font cannot be read."""
+    try:
+        from fontTools.ttLib import TTFont
+        font = TTFont(path, fontNumber=index, lazy=True)
+        return frozenset(font.getBestCmap() or {})
+    except Exception:  # noqa: BLE001 - any unreadable font only loses the coverage check
+        return None
+
+
+@lru_cache(maxsize=None)
+def face(path, index, size):
+    return ImageFont.truetype(path, size, index=index)
+
+
+def covers(spec, text):
+    chars = charset(spec[0], spec[1])
+    return chars is None or all(ord(c) in chars for c in text if not c.isspace())
+
+
+@lru_cache(maxsize=None)
+def fallback_for(char, bold, italic):
+    style = ("bold:" if bold else "") + ("italic:" if italic else "")
+    found = match(f":{style}charset={ord(char):x}")
+    return (found[0], found[1]) if found else None
+
+
+class Face:
+    """A font at one size that draws characters it lacks with a font that has them."""
+
+    def __init__(self, spec, size, bold, italic):
+        self.spec, self.size, self.bold, self.italic = spec, size, bold, italic
+        self.main = face(spec[0], spec[1], size)
+
+    def runs(self, text):
+        chars = charset(self.spec[0], self.spec[1])
+        out = []
+        for c in text:
+            spec = self.spec
+            if chars is not None and not c.isspace() and ord(c) not in chars:
+                spec = fallback_for(c, self.bold, self.italic) or self.spec
+            if out and out[-1][0] == spec:
+                out[-1][1] += c
+            else:
+                out.append([spec, c])
+        return [(face(spec[0], spec[1], self.size), run) for spec, run in out]
+
+    def getlength(self, text):
+        return sum(font.getlength(run) for font, run in self.runs(text))
+
+    def getmetrics(self):
+        return self.main.getmetrics()
+
+    def draw(self, draw, x, y, text, fill):
+        for font, run in self.runs(text):
+            draw.text((x, y), run, font=font, fill=fill, anchor="la")
+            x += font.getlength(run)
+
+
+def block_style(item):
+    return (item.get("family") or "", bool(item.get("bold")), bool(item.get("italic")))
+
+
+def choose_fonts(items, w, h, language):
+    """For each style of the paragraphs on a page, the installed font whose width is closest to the PDF's own, and its width ratio.
+
+    The original lines of every paragraph in that style are measured in each
+    candidate at the PDF size and compared with their widths on the page; a
+    candidate that lacks a letter of the translations is skipped. The ratio
+    (page width over measured width, kept between 0.6 and 1.3) scales the PDF
+    size of every paragraph in that style alike, so paragraphs that share a
+    style in the PDF share a size in the translation.
+    """
+    groups = {}
+    for item in items:
+        if item.get("block") and LATIN_LIKE.match(item["text"]):
+            groups.setdefault(block_style(item), []).append(item)
+    chosen = {}
+    for (family, bold, italic), group in groups.items():
+        style = ("bold:" if bold else "") + ("italic:" if italic else "")
+        lang = script_language(" ".join(i["text"] for i in group), language)
+        names = SERIF_CANDIDATES if SERIF_HINT.search(family) else SANS_CANDIDATES
+        specs = []
+        own = match(f"{family}:{style}lang={lang}") if family else None
+        for name in ((family,) if family else ()) + names:
+            found = match(f"{name}:{style}lang={lang}")
+            if found and (found[0], found[1]) not in specs and (found[2].lower().replace(" ", "") == name.lower().replace(" ", "") or found == own):
+                specs.append((found[0], found[1]))
+        letters = "".join(c for i in group for c in i["text"] if c.isalpha())
+        best, best_error, best_ratio = None, None, 1.0
+        for spec in specs:
+            if not covers(spec, letters):
+                continue
+            measured = actual = 0.0
+            for item in group:
+                size = max(1, int(round(item["size"] * w)))
+                for quad, src in zip(item["quads"], item.get("sources", [])):
+                    if src.strip():
+                        box = quad_box(quad, w, h)
+                        measured += face(spec[0], spec[1], size).getlength(src)
+                        actual += box[2] - box[0]
+            if measured <= 0 or actual <= 0:
+                continue
+            error = abs(math.log(actual / measured))
+            if best_error is None or error < best_error:
+                best, best_error, best_ratio = spec, error, actual / measured
+        if best is not None:
+            chosen[(family, bold, italic)] = (best, min(1.3, max(0.6, best_ratio)))
+    return chosen
+
+
+def render_block(image, item, language, report, obstacles, fonts, cap=None):
+    """Draw one paragraph; `cap` is the largest size it may use. Returns the size drawn."""
+    w, h = image.size
+    boxes = [quad_box(q, w, h) for q in item["quads"]]
+    bx1, by1 = min(b[0] for b in boxes), min(b[1] for b in boxes)
+    bx2, by2 = max(b[2] for b in boxes), max(b[3] for b in boxes)
+    first_background = None
+    for box in boxes:
+        background, _, _ = sample(image, box)
+        first_background = first_background or background
+        pad_h, pad_v = max(2.0, 0.03 * (box[3] - box[1])), max(2.0, 0.08 * (box[3] - box[1]))
+        ImageDraw.Draw(image).rectangle((box[0] - pad_h, box[1] - pad_v, box[2] + pad_h, box[3] + pad_v), fill=background)
+
+    text = item["text"]
+    lang = script_language(text, language)
+    bold, italic = bool(item.get("bold")), bool(item.get("italic"))
+    family = item.get("family") if LATIN_LIKE.match(text) else None
+    chosen = fonts.get(block_style(item))
+    spec, group_ratio = chosen if chosen is not None else (None, None)
+    if spec is None:
+        found = match(f"{family}:{'bold:' if bold else ''}{'italic:' if italic else ''}lang={lang}") if family else None
+        spec = (found[0], found[1]) if found else (font_file(bold, lang, None, italic), 0)
+    path = spec[0]
+    base = item["size"] * w if item.get("size") else (boxes[0][3] - boxes[0][1]) * 0.85
+    # The installed font may be wider or narrower than the PDF's own: size it so the original text keeps its width.
+    sources = [src for src in item.get("sources", []) if src.strip()]
+    measured = sum(Face(spec, max(1, int(round(base))), bold, italic).getlength(src) for src in sources)
+    actual = sum(b[2] - b[0] for b, src in zip(boxes, item.get("sources", [])) if src.strip())
+    if group_ratio is not None:
+        ratio = group_ratio
+    else:
+        ratio = min(1.3, max(0.6, actual / measured)) if measured > 0 and actual > 0 else 1.0
+    start = base * ratio
+    if cap is not None:
+        start = min(start, cap)
+    step = item.get("lineHeight", 0) * h or (by2 - by1) * 1.2
+    color = hex_color(item["color"]) if item.get("color") else (0, 0, 0)
+
+    align = item.get("align", "left")
+    below = max(by2, room_below((bx1, by1, bx2, by2), obstacles, h, max(4.0, 0.25 * step)))
+    gx1, _, gx2, gbottom = free_room(image, (bx1, by1, bx2, by2), first_background, align, step, max_lines=4, obstacles=obstacles, single_line=len(boxes) == 1)
+    # Two layouts: the paragraph's own box, and that box grown into free background (never past the text below).
+    layouts = [(bx1, bx2, by2 + 0.3 * step), (gx1, gx2, min(max(by2 + 0.3 * step, gbottom), below))]
+    floor = max(MIN_SIZE, start * 0.5)
+    original_lines = max(1, len([src for src in item.get("sources", []) if src.strip()]))
+
+    def attempt(size, max_lines, break_words=False):
+        """The first layout where the text fits at `size` in at most `max_lines` lines, or None."""
+        font = Face(spec, max(MIN_SIZE, int(round(size))), bold, italic)
+        line_step = step * font.size / start
+        ascent, descent = font.getmetrics()
+        for x1, x2, bottom in layouts:
+            width = (x2 - x1) * 1.02
+            lines = wrap(text, font, width, break_words)
+            height = line_step * (len(lines) - 1) + ascent + descent
+            if len(lines) <= max_lines and height <= bottom - by1 + 1 and all(font.getlength(line) <= width + 1 for line in lines):
+                return font, lines, line_step, x1, x2
+        return None
+
+    def sizes(low):
+        size = start
+        while size > low:
+            yield size
+            size -= max(0.5, size * 0.04)
+        yield low
+
+    # Keep the original number of lines while a small reduction is enough; then allow more lines; cut words only as a last resort.
+    # Under a shared size the allowed reduction is smaller, so the paragraph stays at its style's size where it can.
+    result = None
+    for size in sizes(max(floor, start * (0.92 if cap is not None else 0.8))):
+        result = attempt(size, original_lines)
+        if result:
+            break
+    if result is None:
+        for size in sizes(floor):
+            result = attempt(size, 10_000)
+            if result:
+                break
+    fits = result is not None
+    if result is None:
+        result = attempt(floor, 10_000, break_words=True)
+    if result is None:
+        # Nothing fits even at the smallest size: draw it there in the grown box and report the overflow.
+        font = Face(spec, max(MIN_SIZE, int(round(floor))), bold, italic)
+        x1, x2 = layouts[-1][0], layouts[-1][1]
+        result = font, wrap(text, font, (x2 - x1) * 1.02, True), step * font.size / start, x1, x2
+    font, lines, line_step, x1, x2 = result
+
+    draw = ImageDraw.Draw(image)
+    for i, line in enumerate(lines):
+        line_w = font.getlength(line)
+        x = x1 + (x2 - x1 - line_w) / 2 if align == "center" else x2 - line_w if align == "right" else x1
+        font.draw(draw, x, by1 + i * line_step, line, color)
+    report["lines"] += 1
+    if not fits:
+        report["overflow"] += 1
+    if font.size < max(MIN_SIZE + 1, int(start * 0.8)):
+        report["shrunk"] += 1
+    report["fonts"].add(path)
+    report["sizes"].append(font.size)
+    return font.size
+
+
+def size_caps(items, sizes):
+    """Largest size for each paragraph so paragraphs of one PDF style get one size.
+
+    `sizes` are the sizes each paragraph reached on its own. In a style with
+    several paragraphs, every paragraph is capped at the smallest size among
+    those within 90% of the style's median; a paragraph that needed less than
+    that keeps its own smaller size.
+    """
+    groups = {}
+    for index, item in enumerate(items):
+        if index in sizes:
+            key = block_style(item) + (item.get("size"), item.get("color"))
+            groups.setdefault(key, []).append(index)
+    caps = {}
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        values = sorted(sizes[i] for i in members)
+        median = values[len(values) // 2]
+        shared = min(v for v in values if v >= 0.9 * median)
+        for i in members:
+            caps[i] = shared
+    return caps
+
+
+def render_page(image, items, language, report, obstacles, margin, fonts, caps):
+    """Draw every item of a page; returns the size drawn for each paragraph by item index."""
+    sizes = {}
+    for index, item in enumerate(items):
+        if item.get("block"):
+            sizes[index] = render_block(image, item, language, report, obstacles, fonts, caps.get(index))
+        else:
+            render_item(image, item, language, report, obstacles, margin)
+    return sizes
+
+
+def assemble(output, dpi, images):
+    """Join page images into one PDF, one page per image."""
+    pages = [Image.open(path).convert("RGB") for path in images]
+    pages[0].save(output, "PDF", save_all=True, append_images=pages[1:], resolution=dpi)
+
+
 def main():
+    if sys.argv[1] == "--assemble":
+        assemble(sys.argv[2], int(sys.argv[3]), sys.argv[4:])
+        return
     spec = json.load(open(sys.argv[1], encoding="utf-8"))
     pages_out = []
     report = {"lines": 0, "overflow": 0, "shrunk": 0, "fonts": set(), "sizes": []}
@@ -245,8 +660,11 @@ def main():
             xs, ys = [q[i] / 1000.0 * w for i in range(0, 8, 2)], [q[i] / 1000.0 * h for i in range(1, 8, 2)]
             obstacles.append((min(xs), min(ys), max(xs), max(ys)))
         margin = max(0.0, min((o[0] for o in obstacles), default=0.0))
-        for item in page["items"]:
-            render_item(image, item, spec.get("language"), report, obstacles, margin)
+        fonts = choose_fonts(page["items"], w, h, spec.get("language"))
+        # A trial pass finds the size each paragraph reaches alone; the real pass gives paragraphs of one style one size.
+        trial = {"lines": 0, "overflow": 0, "shrunk": 0, "fonts": set(), "sizes": []}
+        sizes = render_page(image.copy(), page["items"], spec.get("language"), trial, obstacles, margin, fonts, {})
+        render_page(image, page["items"], spec.get("language"), report, obstacles, margin, fonts, size_caps(page["items"], sizes))
         image.save(page["output"], quality=92)
         pages_out.append(image)
     if spec.get("pdf") and pages_out:

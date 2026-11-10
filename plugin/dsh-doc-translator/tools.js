@@ -65,6 +65,11 @@ export const Config = Schema.object({
   }).required().description('OCR models and page limits for scanned files.'),
   toolTimeoutMs: Schema.natural().min(1000).default(900_000)
     .description('Time budget of one doc_translate call.'),
+  livePreview: Schema.object({
+    enabled: Schema.boolean().default(true).description('Write each finished page or line into a hidden directory in the working directory while doc_translate runs, so the Web client can show the translation beside the chat as it progresses.'),
+    intervalMs: Schema.natural().min(100).default(400).description('Least time between two updates of the translated lines of an Office file. Pages are written as they finish.'),
+    retainMs: Schema.natural().min(60_000).default(86_400_000).description('Live directories older than this are removed when the next doc_translate call starts.'),
+  }).default({ enabled: true, intervalMs: 400, retainMs: 86_400_000 }).description('Live view of a translation in progress.'),
 }).description('Document translator settings.')
 
 const OUTPUT = {
@@ -73,6 +78,7 @@ const OUTPUT = {
   properties: {
     file: { type: 'string', required: true },
     text: { type: 'string', required: true },
+    live: { type: 'string' },
   },
 }
 
@@ -115,6 +121,8 @@ export function apply(ctx, config) {
     output: {
       schema: OUTPUT,
       render: (_args, value) => [{ type: 'text', text: value.text }],
+      // Read by the browser half (client.js): the translated file, and the live view directory when it was written completely.
+      presentationMeta: (_args, value) => (value.live === undefined ? { file: value.file } : { file: value.file, live: value.live }),
     },
     timeoutMs: config.toolTimeoutMs,
     isConcurrencySafe: () => false,

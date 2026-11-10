@@ -6,14 +6,15 @@
  * @module dsh-doc-translator/translate-file
  */
 
-import { extname } from 'node:path'
+import { basename, extname, join } from 'node:path'
 import { checkFonts } from './fonts.js'
 import { assertWritable, chooseOutputDirectory, readInput, writeOutput } from './io.js'
 import { languageInfo } from './lang.js'
+import { createLiveView, liveDirName, pruneLiveViews } from './live.js'
 import { legacyHint, translateOffice } from './office.js'
 import { SUPPORTED_EXTENSIONS } from './ooxml.js'
 import { run as defaultRun } from './proc.js'
-import { SCAN_EXTENSIONS, translateScan } from './scan.js'
+import { SCAN_EXTENSIONS, scanOutputExtension, translateScan } from './scan.js'
 import { renderOfficeSummary, renderScanSummary } from './summary.js'
 import { verifyLayout } from './verify.js'
 
@@ -38,7 +39,7 @@ export function suffixFor(target, info) {
 /**
  * Translate one file.
  * @param {{ ctx: object, sandboxPolicy: { resolve(request: { session: object }): object } | undefined, exec: object, args: object, config: object, llm: object, run?: Function }} input - harness services, the sandbox policy service (`undefined` when no confining filesystem is mounted), tool execution context, tool arguments, plugin config and LLM client.
- * @returns {Promise<{ file: string, text: string }>} the output path and the digest for the model.
+ * @returns {Promise<{ file: string, text: string, live?: string }>} the output path, the digest for the model, and the live view directory when one was written.
  */
 export async function translateDocument(input) {
   try {
@@ -76,7 +77,8 @@ async function translateDocumentUnguided({ ctx, sandboxPolicy, exec, args, confi
   const { bytes, hostPath } = await readInput(ctx, exec, request.path, config.maxFileBytes)
   // Decide where the output goes and whether this Session may write there before spending time and model calls.
   const policy = sandboxPolicy?.resolve({ session: exec.agent.session })
-  const directory = await chooseOutputDirectory(hostPath, await ctx.workingDirectory.ensure(exec.agent, exec.signal))
+  const workingDirectory = await ctx.workingDirectory.ensure(exec.agent, exec.signal)
+  const directory = await chooseOutputDirectory(hostPath, workingDirectory)
   await assertWritable(policy, directory)
   const translation = {
     target: request.target,
@@ -89,19 +91,51 @@ async function translateDocumentUnguided({ ctx, sandboxPolicy, exec, args, confi
     maxTokens: config.maxOutputTokens,
   }
   const suffix = suffixFor(request.target, info)
+  const live = await openLiveView({ config, exec, policy, workingDirectory, kind: isOffice ? 'segments' : 'pages', source: basename(hostPath) })
 
-  if (isOffice) {
-    const report = await translateOffice({ buffer: bytes, extension, llm, signal: exec.signal, options: { ...translation, maxArchiveBytes: config.maxArchiveBytes, expansionWarn: config.expansionWarn } })
-    const layout = request.verifyLayout && config.verifyLayout
-      ? await verifyLayout({ original: bytes, translated: report.buffer, extension, signal: exec.signal, run })
-      : { checked: false, reason: 'turned off' }
-    const fontCheck = await checkFonts(report.fonts, info.code, run)
-    if (info.cjk) notes.push('Chinese, Japanese and Korean need fonts with those glyphs; the file keeps its original font names and may show missing characters if they lack them')
-    const file = await writeOutput({ directory, inputHostPath: hostPath, suffix, extension: `.${extension}`, bytes: report.buffer, policy })
-    return { file, text: renderOfficeSummary({ file, format: report.format, target: request.target, report, layout, fontCheck, notes }) }
+  try {
+    const result = isOffice
+      ? await translateOfficeFile({ request, extension, bytes, hostPath, directory, suffix, policy, translation, info, notes, config, llm, exec, run, live })
+      : await translateScanFile({ request, extension, bytes, hostPath, directory, suffix, policy, translation, info, notes, config, llm, exec, run, live })
+    if (live === undefined) return result
+    await live.view.close({ status: 'done', output: result.file })
+    return live.view.failure === undefined ? { ...result, live: live.dir } : result
+  } catch (error) {
+    await live?.view.close({ status: 'failed', error: exec.signal.aborted ? 'stopped' : (error instanceof Error ? error.message : String(error)) })
+    throw error
   }
+}
 
-  const report = await translateScan({ buffer: bytes, extension, llm, signal: exec.signal, langCode: info.code, run, options: { ...translation, spotModel: config.ocr.spotModel, readModel: config.ocr.readModel, dpi: config.ocr.dpi, maxPages: config.ocr.maxPages, pageConcurrency: config.ocr.pageConcurrency, useTextLayer: config.ocr.useTextLayer, minLayerLetters: config.ocr.minLayerLetters } })
+/**
+ * Start the live view of one call, or return `undefined` when it is turned
+ * off, the call has no id, or the Session may not write in its working
+ * directory.
+ */
+async function openLiveView({ config, exec, policy, workingDirectory, kind, source }) {
+  if (!config.livePreview?.enabled || typeof exec.callId !== 'string') return undefined
+  try {
+    await assertWritable(policy, workingDirectory)
+  } catch {
+    return undefined // The translation can still be written next to its input; only the live view is skipped.
+  }
+  await pruneLiveViews(workingDirectory, config.livePreview.retainMs)
+  const dir = join(workingDirectory, liveDirName(exec.callId))
+  return { dir, view: createLiveView({ dir, kind, source, intervalMs: config.livePreview.intervalMs }) }
+}
+
+async function translateOfficeFile({ request, extension, bytes, hostPath, directory, suffix, policy, translation, info, notes, config, llm, exec, run, live }) {
+  const report = await translateOffice({ buffer: bytes, extension, llm, signal: exec.signal, observer: live?.view, options: { ...translation, maxArchiveBytes: config.maxArchiveBytes, expansionWarn: config.expansionWarn } })
+  const layout = request.verifyLayout && config.verifyLayout
+    ? await verifyLayout({ original: bytes, translated: report.buffer, extension, signal: exec.signal, run })
+    : { checked: false, reason: 'turned off' }
+  const fontCheck = await checkFonts(report.fonts, info.code, run)
+  if (info.cjk) notes.push('Chinese, Japanese and Korean need fonts with those glyphs; the file keeps its original font names and may show missing characters if they lack them')
+  const file = await writeOutput({ directory, inputHostPath: hostPath, suffix, extension: `.${extension}`, bytes: report.buffer, policy })
+  return { file, text: renderOfficeSummary({ file, format: report.format, target: request.target, report, layout, fontCheck, notes }) }
+}
+
+async function translateScanFile({ request, extension, bytes, hostPath, directory, suffix, policy, translation, info, notes, config, llm, exec, run, live }) {
+  const report = await translateScan({ buffer: bytes, extension, llm, signal: exec.signal, langCode: info.code, run, observer: live?.view, options: { ...translation, spotModel: config.ocr.spotModel, readModel: config.ocr.readModel, dpi: config.ocr.dpi, maxPages: config.ocr.maxPages, pageConcurrency: config.ocr.pageConcurrency, useTextLayer: config.ocr.useTextLayer, minLayerLetters: config.ocr.minLayerLetters } })
   const file = await writeOutput({ directory, inputHostPath: hostPath, suffix, extension: `.${report.extension}`, bytes: report.buffer, policy })
   return { file, text: renderScanSummary({ file, extension: report.extension, target: request.target, report: { ...report, notes: [...notes, ...report.notes] } }) }
 }

@@ -85,7 +85,7 @@ const markerSet = text => (text.match(MARKER) ?? []).sort().join(',')
  * Translate segments.
  * @param {{ chat: Function }} llm - client from `createLlm`.
  * @param {Array<{ id: string, text: string }>} segments - text to translate.
- * @param {{ target: string, source?: string, glossary?: Array<{ source: string, target: string }>, models: string[], concurrency: number, batchChars: number, batchItems: number, maxTokens: number, signal?: AbortSignal }} options - languages, models in preference order, and batch limits.
+ * @param {{ target: string, source?: string, glossary?: Array<{ source: string, target: string }>, models: string[], concurrency: number, batchChars: number, batchItems: number, maxTokens: number, signal?: AbortSignal, onProgress?: (progress: { batchesDone: number, batches: number, translations: () => Map<string, string> }) => void }} options - languages, models in preference order, batch limits, and an optional listener called after each settled batch; its `translations()` returns the segments translated so far, by id.
  * @returns {Promise<{ translations: Map<string, string>, failures: Array<{ id: string, reason: string }>, stats: object }>} translations by segment id, segments that stayed untranslated, and call statistics.
  */
 export async function translateSegments(llm, segments, options) {
@@ -142,8 +142,16 @@ export async function translateSegments(llm, segments, options) {
     throw new Error(lastError)
   }
 
+  /** Translations by segment id for the texts translated so far. */
+  const byId = () => {
+    const out = new Map()
+    for (const [text, ids] of unique) if (done.has(text)) for (const id of ids) out.set(id, done.get(text))
+    return out
+  }
+
   const batches = makeBatches(items, options)
   stats.batches = batches.length
+  let batchesDone = 0
   await mapLimit(batches, options.concurrency, async (batch, index) => {
     const order = options.models.map((_, k) => options.models[(index + k) % options.models.length])
     try {
@@ -153,15 +161,13 @@ export async function translateSegments(llm, segments, options) {
       if (options.signal?.aborted || !(error instanceof Error) || error instanceof TypeError) throw error
       for (const item of batch) failed.set(item.text, error.message)
     }
+    options.onProgress?.({ batchesDone: ++batchesDone, batches: batches.length, translations: byId })
   })
 
-  const translations = new Map()
+  const translations = byId()
   const failures = []
   for (const [text, ids] of unique) {
-    for (const id of ids) {
-      if (done.has(text)) translations.set(id, done.get(text))
-      else failures.push({ id, reason: failed.get(text) ?? 'not translated' })
-    }
+    if (!done.has(text)) for (const id of ids) failures.push({ id, reason: failed.get(text) ?? 'not translated' })
   }
   return { translations, failures, stats }
 }

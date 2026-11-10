@@ -65,9 +65,16 @@ Các quy tắc rút ra từ tệp thật: run trong các thẻ bọc khác nhau 
 
 1. PDF được tách thành ảnh bằng `pdftoppm` (150 dpi); ảnh dùng thẳng.
 2. **Từng trang của PDF được xét riêng**: `pdftohtml -xml` đọc lớp chữ một lần; trang có ít nhất `ocr.minLayerLetters` chữ cái dùng lớp chữ (chính xác, không tốn OCR, không có lỗi đọc sai), các trang còn lại đi OCR. Một PDF có trang chữ lẫn trang ảnh vẫn được xử lý đúng. Nếu `pdftohtml` lỗi, tool ghi chú và đọc mọi trang bằng OCR.
-3. **Trang có lớp chữ**: mỗi dòng giữ họ font (đã bỏ tiền tố nhúng `ABCDEF+` và hậu tố `PS`/`MT`), cỡ, màu và đậm/nghiêng của PDF. Họ font được ánh xạ sang font tương đương số đo có sẵn qua `fc-match` (Times New Roman thành Liberation Serif); với chữ không phải Latin/Việt/Hy Lạp/Kirin (Nhật, Trung, Hàn, Thái, Ả Rập) họ font gốc không có glyph nên chọn font theo hệ chữ. Chữ dịch dài hơn được **giãn sang phải đến sát dòng kế bên cùng hàng** (tối đa 2,5 lần bề rộng gốc) thay vì co nhỏ, và chỉ co khi hết chỗ; dòng căn giữa không giãn.
+3. **Trang có lớp chữ**: các mẩu chữ cùng hàng (kể cả ký hiệu nhỏ như "→" in bằng font khác) được nối thành một dòng; các dòng liền nhau cùng font, chồng nhau theo chiều ngang, được gom thành **một đoạn** và dịch cả đoạn (gạch đầu dòng, hoặc dòng ngắn căn trái kết thúc câu, mở đoạn mới; từ bị ngắt bằng gạch nối được nối lại). Bản dịch được **ngắt dòng lại với cùng một cỡ cho mọi dòng**, giữ căn trái/giữa/phải và khoảng cách dòng. Thứ tự ưu tiên: vừa khung của đoạn gốc; nếu không, được **nới vào vùng nền trống quanh đoạn** (kiểm tra từng điểm ảnh, nên dừng trước viền ô, viền thẻ, hình vẽ và chữ khác; sang ngang tối đa 60% bề rộng với nhãn một dòng và 15% với đoạn nhiều dòng, không quá nửa khoảng cách tới chữ bên cạnh trong phạm vi hai dòng trên dưới, chừa khoảng một phần tư dòng và không vào 3% lề trang; xuống dưới không quá chữ kế tiếp bên dưới); giữ nguyên số dòng gốc nếu chỉ cần co tới 80%; sau đó mới thêm dòng và co nhỏ dần tới 50%. **Các đoạn cùng kiểu chữ trong PDF (họ, cỡ, đậm, màu) dùng chung một cỡ**: tỉ lệ hiệu chỉnh font tính chung cho cả kiểu, trang được dàn thử một lượt để biết cỡ mỗi đoạn tự đạt, rồi cả kiểu lấy cỡ nhỏ nhất trong các đoạn không dưới 90% trung vị; đoạn cần nhỏ hơn thế giữ cỡ riêng. Nhãn một dòng lấy kiểu căn của các nhãn cùng kiểu ở gần (cùng mép phải là căn phải, cùng tâm là căn giữa). Không bao giờ cắt giữa một từ tiếng Latin, trừ khi không còn cách nào ở cỡ nhỏ nhất. Font: với mỗi kiểu chữ của trang (họ, đậm, nghiêng), các dòng gốc được đo trong font của PDF nếu máy có, và trong các font sans (hoặc serif nếu họ font gốc là serif) có sẵn; font cho bề rộng gần bản gốc nhất và có đủ chữ cái của bản dịch được chọn, rồi cỡ chữ được hiệu chỉnh để chữ gốc giữ đúng bề rộng. Ký tự font không có (ví dụ "→") được vẽ bằng font có ký tự đó. Với chữ không phải Latin/Việt/Hy Lạp/Kirin, font chọn theo hệ chữ.
 4. **Trang OCR**: mỗi trang gửi đồng thời cho hai model: **PaddleOCR-VL với prompt `Spotting:`** trả từng dòng kèm bốn góc (ổn định, tọa độ theo góc nghiêng của trang, kể cả ảnh quét), và **một model đọc** (Qwen3-VL) trả chữ chính xác. Mỗi dòng giữ khung của Paddle và nhận chữ của model đọc, ghép bằng độ giống không tính dấu, rồi bằng tìm chuỗi con gần giống trên toàn văn (cho trường hợp model đọc gộp cả hàng bảng thành một dòng). Trên trang thử 24 dòng, Paddle một mình đọc đúng nguyên văn 20 dòng, model đọc 23, hai model ghép 24 trên bản sạch.
 5. Chữ dịch được vẽ bằng Pillow: che chữ cũ bằng màu nền lấy mẫu quanh dòng, vẽ chữ dịch cỡ vừa khung (xoay theo góc nghiêng của dòng với trang OCR), font phủ đúng chữ viết của bản dịch (Latin, Trung, Nhật, Hàn, Thái, Ả Rập). Dòng chỉ gồm chữ số giữ nguyên.
+6. Mỗi trang được đọc, dịch và vẽ riêng (tối đa `ocr.pageConcurrency` trang cùng lúc), nên trang đầu xong khi các trang sau còn đang đọc. Dòng lặp lại trên nhiều trang được dịch một lần cho mỗi trang.
+
+### Xem bản dịch trực tiếp
+
+Khi `doc_translate` chạy, tiến độ được ghi vào một thư mục ẩn trong thư mục làm việc của phiên: `.dsh-translating-<id lời gọi>/`. Thư mục có `state.json` (loại `pages` hoặc `segments`, trạng thái `running`/`done`/`failed`, tên tệp gốc, tệp kết quả hoặc lỗi) và ảnh từng trang: `o-<n>` là trang gốc, `t-<n>` là trang đã dịch. Với PDF và ảnh, ảnh gốc được chép vào trước, rồi mỗi trang xong thì có thêm ảnh đã dịch; với Office, `state.json` liệt kê các dòng theo thứ tự tài liệu kèm bản dịch khi có, cập nhật cách nhau ít nhất `livePreview.intervalMs`. Mỗi ảnh chỉ ghi một lần, mọi tệp được ghi trọn qua tệp tạm, và `state.json` chỉ nhắc đến ảnh đã ghi xong. Thư mục cũ hơn `livePreview.retainMs` bị xóa khi lần gọi sau bắt đầu. Ghi lỗi chỉ dừng bản xem trực tiếp, không làm hỏng lần dịch; model không được biết về thư mục này.
+
+Nửa trình duyệt (`client.js`, mục Loader `dsh-doc-translator`) đăng ký dòng `doc_translate` trong khung chat và một loại tab ở sidebar phải (`dsh-resource://doc-translate/live/<thư mục>`). Khi lời gọi đang chạy, dòng chat tính cùng thư mục từ id lời gọi và thư mục làm việc, rồi mở tab đó một lần. Tab đọc `state.json` mỗi 0,6 giây qua route `/api/file` cho đến khi xong, và chỉ vẽ lại khi nội dung đổi: trang đã dịch hiện dần đè lên trang gốc, trang đang dịch có dải sáng quét nhẹ, dòng Office đã dịch hiện dần thay cho chữ gốc (rê chuột để xem chữ gốc), thanh tiến độ chạy mượt, và khung tự cuộn theo phần chưa xong đầu tiên trừ khi người dùng vừa cuộn trong 4 giây. Không phần nào đã hiện bị tải lại. Khi xong, tab có nút "Mở bản dịch"; dòng chat có nút "Xem tiến độ" và "Mở bản dịch".
 
 ## Cấu hình
 
@@ -90,6 +97,9 @@ Các quy tắc rút ra từ tệp thật: run trong các thẻ bọc khác nhau 
 | `ocr.spotModel`, `ocr.readModel` | bắt buộc | Model lấy vị trí dòng và model đọc chữ |
 | `ocr.dpi`, `ocr.maxPages`, `ocr.pageConcurrency` | 150, 30, 4 | Độ phân giải, số trang tối đa, số trang đọc cùng lúc |
 | `ocr.useTextLayer` | `true` | Dùng lớp chữ của trang PDF khi có, thay vì OCR |
+| `livePreview.enabled` | `true` | Ghi tiến độ dịch vào thư mục xem trực tiếp trong thư mục làm việc |
+| `livePreview.intervalMs` | 400 | Khoảng cách tối thiểu giữa hai lần cập nhật dòng Office; trang được ghi ngay khi xong |
+| `livePreview.retainMs` | 86400000 | Thư mục xem trực tiếp cũ hơn mức này bị xóa khi lần gọi sau bắt đầu |
 | `ocr.minLayerLetters` | 20 | Trang có ít chữ cái hơn mức này trong lớp chữ được coi là ảnh và đi OCR |
 | `toolTimeoutMs` | 900000 | Ngân sách thời gian một lần gọi |
 
@@ -114,7 +124,7 @@ Các quy tắc rút ra từ tệp thật: run trong các thẻ bọc khác nhau 
 - Ngôn ngữ viết từ phải sang trái được dịch nhưng bố cục không được lật.
 - Mỗi dòng giữa hai lần xuống dòng được dịch như một đơn vị riêng; câu bị xuống dòng thủ công có thể kém mạch lạc.
 - **PDF luôn ra dạng PDF toàn ảnh**, kể cả khi bản gốc có lớp chữ: chữ không còn chọn hay tìm kiếm được. Giữ lớp chữ cần thư viện ghi PDF (ví dụ PyMuPDF) mà máy này chưa có.
-- Trang có lớp chữ: họ font là font tương đương cài sẵn, không phải font nhúng; nghiêng và căn phải/căn đều là xấp xỉ; mỗi dòng của PDF được dịch riêng, nên câu bị ngắt giữa hai dòng có thể kém mạch lạc; chữ dịch dài hơn vẫn có thể phải co nhỏ khi dòng kế bên sát.
+- Trang có lớp chữ: font là font cài sẵn có bề rộng gần nhất, không phải font nhúng, nên dáng chữ khác bản gốc; định dạng trong một dòng (một từ in đậm giữa dòng thường) mất, cả đoạn lấy kiểu của dòng đầu; căn đều thành căn trái; chỗ trống được nhận ra qua màu nền, nên nền có ảnh hoặc chuyển màu không cho nới và bản dịch phải co nhỏ; bản dịch dài hơn nhiều vẫn phải co nhỏ, và một đoạn như vậy trong nhóm cùng kiểu sẽ nhỏ hơn các đoạn còn lại; việc gom đoạn là suy đoán theo vị trí và font, hai đoạn sát nhau cùng font có thể bị gộp.
 - Trang OCR: font xấp xỉ; nhận diện đậm/thường là phỏng đoán theo độ dày nét (hiệu chỉnh trên một trang, chưa chắc đúng với trang mờ); nền không đồng màu (ảnh chụp, gradient) che chữ cũ kém hơn nền trơn; lỗi OCR thành lỗi dịch.
 - Tệp có mật khẩu, ZIP64 và nén kiểu lạ không đọc được.
 
@@ -125,7 +135,7 @@ cd plugin/dsh-doc-translator
 npm test
 ```
 
-Chạy bằng `node --test`, không cần mạng. Gồm: đọc/ghi ZIP và XML (bao gồm tệp lỗi, mã hóa, zip bomb), phân tích và ghi lại OOXML (khoảng định dạng, đổi thứ tự, mất dấu, tab, ngắt dòng, khung nội dung, hộp văn bản, theo dõi thay đổi), client LLM (thử lại, timeout, hủy, giới hạn song song theo model), bộ dịch (lô, trùng lặp, xoay vòng model, chuyển dự phòng, chia lô, hỏi lại khi mất dấu), OCR (đọc tọa độ, ghép dòng, tìm chuỗi con), vào/ra có chính sách sandbox, vẽ chữ lên ảnh và PDF thật bằng Pillow, và so ảnh từng điểm ảnh bằng LibreOffice thật cho cả ba định dạng. Test cần LibreOffice, Poppler hoặc Pillow tự bỏ qua khi thiếu.
+Chạy bằng `node --test`, không cần mạng. Gồm: đọc/ghi ZIP và XML (bao gồm tệp lỗi, mã hóa, zip bomb), phân tích và ghi lại OOXML (khoảng định dạng, đổi thứ tự, mất dấu, tab, ngắt dòng, khung nội dung, hộp văn bản, theo dõi thay đổi), client LLM (thử lại, timeout, hủy, giới hạn song song theo model), bộ dịch (lô, trùng lặp, xoay vòng model, chuyển dự phòng, chia lô, hỏi lại khi mất dấu), OCR (đọc tọa độ, ghép dòng, tìm chuỗi con), vào/ra có chính sách sandbox, vẽ chữ lên ảnh và PDF thật bằng Pillow, bản xem trực tiếp (trạng thái và ảnh từng trang, nhịp cập nhật dòng, dọn thư mục, thư mục phía trình duyệt trùng phía Host, tab hiển thị trang và dòng), và so ảnh từng điểm ảnh bằng LibreOffice thật cho cả ba định dạng. Test cần LibreOffice, Poppler hoặc Pillow tự bỏ qua khi thiếu.
 
 ## Cấu trúc
 
@@ -138,4 +148,6 @@ Chạy bằng `node --test`, không cần mạng. Gồm: đọc/ghi ZIP và XML 
 | `layer.js`, `ocr.js`, `scan.js`, `scripts/render_overlay.py` | PDF và ảnh: lớp chữ của PDF, OCR hai model, ghép dòng, vẽ chữ dịch |
 | `io.js`, `proc.js` | Đọc/ghi tệp có kiểm tra sandbox, chạy chương trình ngoài |
 | `verify.js`, `fonts.js`, `lang.js`, `summary.js` | Kiểm tra bố cục, kiểm tra font, ngôn ngữ, kết quả cho model |
+| `live.js` | Thư mục xem bản dịch trực tiếp: `state.json`, ảnh từng trang, dọn thư mục cũ |
+| `ui.js`, `client.js` | Nửa Host rỗng và nửa trình duyệt (viết tay, không cần build): dòng `doc_translate` và tab xem trực tiếp ở sidebar |
 | `skills/document-translation/SKILL.md` | Cách chọn bước đầu và cách báo kết quả trung thực |

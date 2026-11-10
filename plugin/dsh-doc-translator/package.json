@@ -1,14 +1,42 @@
 {
   "name": "dsh-doc-translator",
   "version": "0.1.0",
-  "description": "DeepSeek Harness document translator preset: translates Word, PowerPoint and Excel files in place so fonts, sizes, colours, tables and images stay as they are, and scanned PDFs and images through OCR models, with batches spread over several models in parallel",
+  "description": "DeepSeek Harness document translator preset: translates Word, PowerPoint and Excel files in place so fonts, sizes, colours, tables and images stay as they are, and scanned PDFs and images through OCR models, with batches spread over several models in parallel; while a file is translated, the Web client shows the partly translated document beside the chat",
   "type": "module",
   "exports": {
+    ".": "./ui.js",
+    "./client": "./client.js",
     "./tools": "./tools.js",
     "./skills": "./skills.js",
     "./package.json": "./package.json"
   },
-  "files": ["zip.js", "xml.js", "ooxml.js", "office.js", "llm.js", "translate.js", "layer.js", "ocr.js", "scan.js", "io.js", "lang.js", "fonts.js", "verify.js", "proc.js", "summary.js", "translate-file.js", "tools.js", "skills.js", "scripts", "skills", "cordis.patch.yml", "README.md"],
+  "files": [
+    "zip.js",
+    "xml.js",
+    "ooxml.js",
+    "office.js",
+    "llm.js",
+    "translate.js",
+    "layer.js",
+    "ocr.js",
+    "scan.js",
+    "io.js",
+    "lang.js",
+    "fonts.js",
+    "verify.js",
+    "proc.js",
+    "summary.js",
+    "translate-file.js",
+    "tools.js",
+    "skills.js",
+    "scripts",
+    "skills",
+    "cordis.patch.yml",
+    "README.md",
+    "live.js",
+    "ui.js",
+    "client.js"
+  ],
   "scripts": {
     "test": "node --test \"tests/*.test.js\""
   },
@@ -18,6 +46,14 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-client-ui-tool"
+      ],
+      "platform": "web"
     }
   },
   "peerDependencies": {

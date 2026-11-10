@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -112,5 +112,24 @@ test('text in the target script gets a font that covers it', { skip: !PY }, asyn
     const out = await translateScan({ buffer: readFileSync(join(dir, 'in.png')), extension: 'png', llm: fakeLlm({ translate: () => '你好，世界' }), options: OPTIONS, langCode: 'zh-cn' })
     assert.equal(out.render.lines, 1)
     assert.ok(out.render.fonts.length >= 1)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('the observer gets the page images first, then each translated page image while the files still exist', { skip: !(PY && POPPLER) }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'scan-test-'))
+  try {
+    page(join(dir, 'a.png')); page(join(dir, 'b.png'))
+    const make = `from PIL import Image\npages = [Image.open(${JSON.stringify(join(dir, 'a.png'))}).convert("RGB"), Image.open(${JSON.stringify(join(dir, 'b.png'))}).convert("RGB")]\npages[0].save(${JSON.stringify(join(dir, 'in.pdf'))}, "PDF", save_all=True, append_images=pages[1:], resolution=100)`
+    assert.equal(spawnSync('python3', ['-c', make]).status, 0)
+    const events = []
+    const observer = {
+      pages: async images => { events.push(['pages', images.length, images.every(existsSync)]) },
+      page: async (index, image) => { events.push(['page', index, existsSync(image)]) },
+    }
+    const out = await translateScan({ buffer: readFileSync(join(dir, 'in.pdf')), extension: 'pdf', llm: fakeLlm(), options: { ...OPTIONS, pageConcurrency: 1 }, langCode: 'en', observer })
+    assert.deepEqual(events, [['pages', 2, true], ['page', 0, true], ['page', 1, true]])
+    writeFileSync(join(dir, 'out.pdf'), out.buffer)
+    assert.match((await run('pdfinfo', [join(dir, 'out.pdf')])).stdout, /Pages:\s+2/)
+    assert.deepEqual(out.lines, { total: 2, translated: 2, failed: 0 })
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
