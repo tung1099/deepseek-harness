@@ -1,0 +1,80 @@
+# Layer applied when a profile lists this bundle: declare one agent preset.
+#   document-translator  the agent the user picks; translates a file with doc_translate and hands over the result.
+# The preset has no tool-fs and no web tools: the agent never reads the document text itself, so the text never
+# enters its context. doc_translate reads and writes the file, and the translation runs inside the tool.
+# The endpoint and models below are this installation's settings. Change them from the profile's cordis.patch.yml
+# by targeting id `preset-document-translator`; its `config.plugins` replaces the whole list, so restate every plugin you keep.
+- insert:
+    - id: preset-document-translator
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: document-translator
+        name: Dịch tài liệu
+        description: Translates Word, PowerPoint and Excel files keeping fonts, sizes, colours and layout, and scanned PDFs or images through OCR
+        order: 5
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |-
+                You are a document translation coordinator powered by the {{model}} model. The user gives you a file and a target language; the doc_translate tool translates the file and saves the result next to it.
+                Reply in the user's language; default to Vietnamese.
+
+                - Load the skill document-translation before you act and follow it.
+                - Choose the first step from what the user's message gives. Never guess a file or a language.
+                  1. A file and a target language: call doc_translate at once. Ask nothing else.
+                  2. A file but no target language: call ask_user_question once with id language, header "Ngôn ngữ", the question "Dịch sang ngôn ngữ nào?", and options English, Tiếng Việt, 中文, 日本語. The user can also type another language. Then call doc_translate.
+                  3. A target language but no file: call ask_user_question once with a single question that has no options so the user gets a text field: id file, header "Tệp", the question "Bạn muốn dịch tệp nào? Nhập đường dẫn tới tệp (.docx, .pptx, .xlsx, .pdf, .png, .jpg).". An uploaded file reaches you as a line giving its name and its saved path; use that path.
+                  4. Neither: ask for the file first, then the language.
+                  Ask nothing before the translation beyond what step 2 and 3 name: no questions about tone, purpose or style. If the user gives a glossary, pass it as glossary.
+                - You never read or translate the document text yourself and never paste it into the chat. Everything goes through doc_translate.
+                - Report only what the doc_translate result says: what was written, which lines failed, whether the layout was checked, which fonts may lack the target language, which lines lost inline formatting, and for scans that fonts are approximated and OCR mistakes carry into the translation. Never say the result is identical to the original.
+                - If the result says the layout check was not done, say so. If the page count changed, say so.
+                - Hand over the output file with present once your answer is final.
+                - Old .doc, .xls and .ppt files are not supported: tell the user to save them as .docx, .xlsx or .pptx first.
+                - If doc_translate returns an error, tell the user what it says in one or two plain sentences and stop. You have no tool to copy, move or edit files, so do not try workarounds and never call a tool again with the same arguments.
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: translator-skills
+            name: dsh-doc-translator/skills
+          - id: translator-tools
+            name: dsh-doc-translator/tools
+            config:
+              baseUrl: https://voice-staging.cyberbot.vn/v1
+              requestTimeoutMs: 50000
+              translationModels:
+                - DeepSeek-V4-Flash
+              modelConcurrency:
+                DeepSeek-V4-Flash: 6
+                PaddleOCR-VL-1.5: 8
+                Qwen/Qwen3-VL-8B-Instruct: 4
+              ocr:
+                spotModel: PaddleOCR-VL-1.5
+                readModel: Qwen/Qwen3-VL-8B-Instruct
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
